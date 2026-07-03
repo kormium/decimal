@@ -83,7 +83,11 @@ public class Decimal private constructor(
      * exactly). The result's scale is `max(scale + n, 0)`, matching `java.math.BigDecimal`.
      */
     public fun movePointLeft(n: Int): Decimal {
-        if (special != FINITE || n == 0) return this // n == 0 short-circuit matches the JDK
+        if (special != FINITE) return this
+        // Per the java.math.BigDecimal contract, the result scale is max(scale + n, 0) — even
+        // for n == 0: a negative scale pads out to plain form. (JDK ≤17 short-circuited n == 0,
+        // violating its own javadoc; JDK 21+ conforms. We follow the documented behavior, so
+        // the differential oracle must run on JDK 21+.)
         val newScale = scale.toLong() + n
         if (newScale >= 0) {
             checkScale(newScale)
@@ -93,7 +97,7 @@ public class Decimal private constructor(
         return finite(negative, padZerosRight(digits, (-newScale).toInt()), 0)
     }
 
-    /** Moves the decimal point [n] places to the right; see [movePointLeft]. */
+    /** Moves the decimal point [n] places to the right; see [movePointLeft] for the scale rule. */
     public fun movePointRight(n: Int): Decimal {
         if (special != FINITE) return this
         if (n == Int.MIN_VALUE) throw ArithmeticException("Scale overflow")

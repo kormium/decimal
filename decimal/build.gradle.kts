@@ -46,6 +46,26 @@ kotlin {
     }
 }
 
+// Forward the differential-suite knobs from the Gradle CLI into the test JVM
+// (./gradlew :decimal:jvmTest -Ddecimal.differential.seed=...), and pin the test JVM to 21:
+// the suite uses java.math.BigDecimal as its oracle, and JDK ≤17 has a movePointLeft(0)
+// bug (returns a negative scale, violating its own javadoc) that JDK 21+ fixed.
+tasks.withType<Test>().configureEach {
+    listOf("decimal.differential.iterations", "decimal.differential.seed").forEach { p ->
+        System.getProperty(p)?.let { systemProperty(p, it) }
+    }
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) })
+}
+
+// Failures must be readable straight from CI logs, message included.
+tasks.withType<AbstractTestTask>().configureEach {
+    testLogging {
+        events(org.gradle.api.tasks.testing.logging.TestLogEvent.FAILED)
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showExceptions = true
+    }
+}
+
 configure<MavenPublishBaseExtension> {
     publishToMavenCentral()
     signAllPublications()

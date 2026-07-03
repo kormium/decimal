@@ -135,6 +135,11 @@ class DecimalGoldenTest {
         assertEquals("0.025", Decimal("2.5").movePointLeft(2).toString())
         assertEquals("250", Decimal("2.5").movePointRight(2).toString())
         assertEquals("2.5", Decimal("2.5").movePointLeft(2).movePointRight(2).toString())
+        // Scale contract: result scale = max(scale + n, 0) even for n == 0 (JDK ≤17 got this
+        // wrong; JDK 21+ conforms — a negative scale pads out to plain form).
+        assertEquals("100000", Decimal("1E+5").movePointLeft(0).toString())
+        assertEquals("100000", Decimal("1E+5").movePointRight(0).toString())
+        assertEquals("2.5", Decimal("2.5").movePointLeft(0).toString())
         assertEquals("6E+2", Decimal("600.0").stripTrailingZeros().toString())
         assertEquals("0", Decimal("0.000").stripTrailingZeros().toString())
         assertEquals("1.5", Decimal("1.50").stripTrailingZeros().toString())
