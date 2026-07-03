@@ -1,0 +1,77 @@
+public final class io/github/kormium/decimal/Decimal : java/lang/Comparable {
+	public static final field Companion Lio/github/kormium/decimal/Decimal$Companion;
+	public synthetic fun <init> (ZLjava/lang/String;IBLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun abs ()Lio/github/kormium/decimal/Decimal;
+	public fun compareTo (Lio/github/kormium/decimal/Decimal;)I
+	public synthetic fun compareTo (Ljava/lang/Object;)I
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPrecision ()I
+	public final fun getScale ()I
+	public fun hashCode ()I
+	public final fun isFinite ()Z
+	public final fun isInfinite ()Z
+	public final fun isNaN ()Z
+	public final fun isZero ()Z
+	public final fun minus (Lio/github/kormium/decimal/Decimal;)Lio/github/kormium/decimal/Decimal;
+	public final fun movePointLeft (I)Lio/github/kormium/decimal/Decimal;
+	public final fun movePointRight (I)Lio/github/kormium/decimal/Decimal;
+	public final fun plus (Lio/github/kormium/decimal/Decimal;)Lio/github/kormium/decimal/Decimal;
+	public final fun setScale (ILio/github/kormium/decimal/RoundingMode;)Lio/github/kormium/decimal/Decimal;
+	public static synthetic fun setScale$default (Lio/github/kormium/decimal/Decimal;ILio/github/kormium/decimal/RoundingMode;ILjava/lang/Object;)Lio/github/kormium/decimal/Decimal;
+	public final fun signum ()I
+	public final fun stripTrailingZeros ()Lio/github/kormium/decimal/Decimal;
+	public final fun times (Lio/github/kormium/decimal/Decimal;)Lio/github/kormium/decimal/Decimal;
+	public final fun toDouble ()D
+	public final fun toFloat ()F
+	public final fun toInt ()I
+	public final fun toIntExact ()I
+	public final fun toLong ()J
+	public final fun toLongExact ()J
+	public final fun toPlainString ()Ljava/lang/String;
+	public fun toString ()Ljava/lang/String;
+	public final fun unaryMinus ()Lio/github/kormium/decimal/Decimal;
+	public final fun unaryPlus ()Lio/github/kormium/decimal/Decimal;
+}
+
+public final class io/github/kormium/decimal/Decimal$Companion {
+	public final fun fromDouble (D)Lio/github/kormium/decimal/Decimal;
+	public final fun getNEGATIVE_INFINITY ()Lio/github/kormium/decimal/Decimal;
+	public final fun getNaN ()Lio/github/kormium/decimal/Decimal;
+	public final fun getONE ()Lio/github/kormium/decimal/Decimal;
+	public final fun getPOSITIVE_INFINITY ()Lio/github/kormium/decimal/Decimal;
+	public final fun getTEN ()Lio/github/kormium/decimal/Decimal;
+	public final fun getZERO ()Lio/github/kormium/decimal/Decimal;
+	public final fun invoke (Ljava/lang/String;)Lio/github/kormium/decimal/Decimal;
+	public final fun of (I)Lio/github/kormium/decimal/Decimal;
+	public final fun of (J)Lio/github/kormium/decimal/Decimal;
+	public final fun of (JI)Lio/github/kormium/decimal/Decimal;
+	public final fun parse (Ljava/lang/String;)Lio/github/kormium/decimal/Decimal;
+}
+
+public final class io/github/kormium/decimal/DecimalKt {
+	public static final fun toDecimal (D)Lio/github/kormium/decimal/Decimal;
+	public static final fun toDecimal (I)Lio/github/kormium/decimal/Decimal;
+	public static final fun toDecimal (J)Lio/github/kormium/decimal/Decimal;
+	public static final fun toDecimal (Ljava/lang/String;)Lio/github/kormium/decimal/Decimal;
+}
+
+public final class io/github/kormium/decimal/JavaInteropKt {
+	public static final fun toJavaBigDecimal (Lio/github/kormium/decimal/Decimal;)Ljava/math/BigDecimal;
+	public static final fun toJavaRoundingMode (Lio/github/kormium/decimal/RoundingMode;)Ljava/math/RoundingMode;
+	public static final fun toKormiumDecimal (Ljava/math/BigDecimal;)Lio/github/kormium/decimal/Decimal;
+}
+
+public final class io/github/kormium/decimal/RoundingMode : java/lang/Enum {
+	public static final field CEILING Lio/github/kormium/decimal/RoundingMode;
+	public static final field DOWN Lio/github/kormium/decimal/RoundingMode;
+	public static final field FLOOR Lio/github/kormium/decimal/RoundingMode;
+	public static final field HALF_DOWN Lio/github/kormium/decimal/RoundingMode;
+	public static final field HALF_EVEN Lio/github/kormium/decimal/RoundingMode;
+	public static final field HALF_UP Lio/github/kormium/decimal/RoundingMode;
+	public static final field UNNECESSARY Lio/github/kormium/decimal/RoundingMode;
+	public static final field UP Lio/github/kormium/decimal/RoundingMode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lio/github/kormium/decimal/RoundingMode;
+	public static fun values ()[Lio/github/kormium/decimal/RoundingMode;
+}
+

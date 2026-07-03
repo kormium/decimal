@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  # JVM (incl. the java.math.BigDecimal differential oracle), js/wasm under Node,
+  # Linux native, and the public-ABI check.
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: API compatibility check
+        run: ./gradlew apiCheck --console=plain
+
+      - name: JVM tests (differential oracle vs java.math.BigDecimal)
+        run: ./gradlew :decimal:jvmTest --console=plain
+
+      - name: JS / Wasm tests (Node)
+        run: ./gradlew :decimal:jsNodeTest :decimal:wasmJsNodeTest :decimal:wasmWasiNodeTest --console=plain
+
+      - name: Linux native tests
+        run: ./gradlew :decimal:linuxX64Test --console=plain
+
+      - name: Cross-compile remaining Linux-buildable targets
+        run: >-
+          ./gradlew
+          :decimal:compileKotlinLinuxArm64
+          :decimal:compileKotlinAndroidNativeArm32 :decimal:compileKotlinAndroidNativeArm64
+          :decimal:compileKotlinAndroidNativeX86 :decimal:compileKotlinAndroidNativeX64
+          --console=plain
+
+      - name: Coverage report
+        run: ./gradlew :decimal:koverXmlReport --console=plain
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: test-reports-linux
+          path: "**/build/reports/tests/**"
+          if-no-files-found: ignore
+
+  # Apple family: run what the runner can execute, compile the rest.
+  apple:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-macos-kotlin-2.4.0
+
+      - name: macOS + iOS simulator tests
+        run: ./gradlew :decimal:macosArm64Test :decimal:iosSimulatorArm64Test --console=plain
+
+      - name: Cross-compile the remaining Apple targets
+        run: >-
+          ./gradlew
+          :decimal:compileKotlinMacosX64 :decimal:compileKotlinIosArm64 :decimal:compileKotlinIosX64
+          :decimal:compileKotlinTvosArm64 :decimal:compileKotlinTvosX64 :decimal:compileKotlinTvosSimulatorArm64
+          :decimal:compileKotlinWatchosArm64 :decimal:compileKotlinWatchosX64
+          :decimal:compileKotlinWatchosSimulatorArm64 :decimal:compileKotlinWatchosDeviceArm64
+          --console=plain
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: test-reports-apple
+          path: "**/build/reports/tests/**"
+          if-no-files-found: ignore
+
+  # Real test execution for the mingwX64 target.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-windows-kotlin-2.4.0
+
+      - name: Windows native tests
+        run: .\gradlew.bat :decimal:mingwX64Test --console=plain
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: test-reports-windows
+          path: "**/build/reports/tests/**"
+          if-no-files-found: ignore

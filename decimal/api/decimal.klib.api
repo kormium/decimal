@@ -1,0 +1,89 @@
+// Klib ABI Dump
+// Targets: [androidNativeArm32, androidNativeArm64, androidNativeX64, androidNativeX86, iosArm64, iosSimulatorArm64, iosX64, js, linuxArm64, linuxX64, macosArm64, macosX64, mingwX64, tvosArm64, tvosSimulatorArm64, tvosX64, wasmJs, wasmWasi, watchosArm64, watchosDeviceArm64, watchosSimulatorArm64, watchosX64]
+// Rendering settings:
+// - Signature version: 2
+// - Show manifest properties: true
+// - Show declarations: true
+
+// Library unique name: <io.github.kormium:decimal>
+final enum class io.github.kormium.decimal/RoundingMode : kotlin/Enum<io.github.kormium.decimal/RoundingMode> { // io.github.kormium.decimal/RoundingMode|null[0]
+    enum entry CEILING // io.github.kormium.decimal/RoundingMode.CEILING|null[0]
+    enum entry DOWN // io.github.kormium.decimal/RoundingMode.DOWN|null[0]
+    enum entry FLOOR // io.github.kormium.decimal/RoundingMode.FLOOR|null[0]
+    enum entry HALF_DOWN // io.github.kormium.decimal/RoundingMode.HALF_DOWN|null[0]
+    enum entry HALF_EVEN // io.github.kormium.decimal/RoundingMode.HALF_EVEN|null[0]
+    enum entry HALF_UP // io.github.kormium.decimal/RoundingMode.HALF_UP|null[0]
+    enum entry UNNECESSARY // io.github.kormium.decimal/RoundingMode.UNNECESSARY|null[0]
+    enum entry UP // io.github.kormium.decimal/RoundingMode.UP|null[0]
+
+    final val entries // io.github.kormium.decimal/RoundingMode.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<io.github.kormium.decimal/RoundingMode> // io.github.kormium.decimal/RoundingMode.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): io.github.kormium.decimal/RoundingMode // io.github.kormium.decimal/RoundingMode.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<io.github.kormium.decimal/RoundingMode> // io.github.kormium.decimal/RoundingMode.values|values#static(){}[0]
+}
+
+final class io.github.kormium.decimal/Decimal : kotlin/Comparable<io.github.kormium.decimal/Decimal> { // io.github.kormium.decimal/Decimal|null[0]
+    final val isFinite // io.github.kormium.decimal/Decimal.isFinite|{}isFinite[0]
+        final fun <get-isFinite>(): kotlin/Boolean // io.github.kormium.decimal/Decimal.isFinite.<get-isFinite>|<get-isFinite>(){}[0]
+    final val isInfinite // io.github.kormium.decimal/Decimal.isInfinite|{}isInfinite[0]
+        final fun <get-isInfinite>(): kotlin/Boolean // io.github.kormium.decimal/Decimal.isInfinite.<get-isInfinite>|<get-isInfinite>(){}[0]
+    final val isNaN // io.github.kormium.decimal/Decimal.isNaN|{}isNaN[0]
+        final fun <get-isNaN>(): kotlin/Boolean // io.github.kormium.decimal/Decimal.isNaN.<get-isNaN>|<get-isNaN>(){}[0]
+    final val isZero // io.github.kormium.decimal/Decimal.isZero|{}isZero[0]
+        final fun <get-isZero>(): kotlin/Boolean // io.github.kormium.decimal/Decimal.isZero.<get-isZero>|<get-isZero>(){}[0]
+    final val precision // io.github.kormium.decimal/Decimal.precision|{}precision[0]
+        final fun <get-precision>(): kotlin/Int // io.github.kormium.decimal/Decimal.precision.<get-precision>|<get-precision>(){}[0]
+    final val scale // io.github.kormium.decimal/Decimal.scale|{}scale[0]
+        final fun <get-scale>(): kotlin/Int // io.github.kormium.decimal/Decimal.scale.<get-scale>|<get-scale>(){}[0]
+
+    final fun abs(): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/Decimal.abs|abs(){}[0]
+    final fun compareTo(io.github.kormium.decimal/Decimal): kotlin/Int // io.github.kormium.decimal/Decimal.compareTo|compareTo(io.github.kormium.decimal.Decimal){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.kormium.decimal/Decimal.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.kormium.decimal/Decimal.hashCode|hashCode(){}[0]
+    final fun minus(io.github.kormium.decimal/Decimal): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/Decimal.minus|minus(io.github.kormium.decimal.Decimal){}[0]
+    final fun movePointLeft(kotlin/Int): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/Decimal.movePointLeft|movePointLeft(kotlin.Int){}[0]
+    final fun movePointRight(kotlin/Int): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/Decimal.movePointRight|movePointRight(kotlin.Int){}[0]
+    final fun plus(io.github.kormium.decimal/Decimal): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/Decimal.plus|plus(io.github.kormium.decimal.Decimal){}[0]
+    final fun setScale(kotlin/Int, io.github.kormium.decimal/RoundingMode = ...): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/Decimal.setScale|setScale(kotlin.Int;io.github.kormium.decimal.RoundingMode){}[0]
+    final fun signum(): kotlin/Int // io.github.kormium.decimal/Decimal.signum|signum(){}[0]
+    final fun stripTrailingZeros(): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/Decimal.stripTrailingZeros|stripTrailingZeros(){}[0]
+    final fun times(io.github.kormium.decimal/Decimal): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/Decimal.times|times(io.github.kormium.decimal.Decimal){}[0]
+    final fun toDouble(): kotlin/Double // io.github.kormium.decimal/Decimal.toDouble|toDouble(){}[0]
+    final fun toFloat(): kotlin/Float // io.github.kormium.decimal/Decimal.toFloat|toFloat(){}[0]
+    final fun toInt(): kotlin/Int // io.github.kormium.decimal/Decimal.toInt|toInt(){}[0]
+    final fun toIntExact(): kotlin/Int // io.github.kormium.decimal/Decimal.toIntExact|toIntExact(){}[0]
+    final fun toLong(): kotlin/Long // io.github.kormium.decimal/Decimal.toLong|toLong(){}[0]
+    final fun toLongExact(): kotlin/Long // io.github.kormium.decimal/Decimal.toLongExact|toLongExact(){}[0]
+    final fun toPlainString(): kotlin/String // io.github.kormium.decimal/Decimal.toPlainString|toPlainString(){}[0]
+    final fun toString(): kotlin/String // io.github.kormium.decimal/Decimal.toString|toString(){}[0]
+    final fun unaryMinus(): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/Decimal.unaryMinus|unaryMinus(){}[0]
+    final fun unaryPlus(): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/Decimal.unaryPlus|unaryPlus(){}[0]
+
+    final object Companion { // io.github.kormium.decimal/Decimal.Companion|null[0]
+        final val NEGATIVE_INFINITY // io.github.kormium.decimal/Decimal.Companion.NEGATIVE_INFINITY|{}NEGATIVE_INFINITY[0]
+            final fun <get-NEGATIVE_INFINITY>(): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/Decimal.Companion.NEGATIVE_INFINITY.<get-NEGATIVE_INFINITY>|<get-NEGATIVE_INFINITY>(){}[0]
+        final val NaN // io.github.kormium.decimal/Decimal.Companion.NaN|{}NaN[0]
+            final fun <get-NaN>(): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/Decimal.Companion.NaN.<get-NaN>|<get-NaN>(){}[0]
+        final val ONE // io.github.kormium.decimal/Decimal.Companion.ONE|{}ONE[0]
+            final fun <get-ONE>(): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/Decimal.Companion.ONE.<get-ONE>|<get-ONE>(){}[0]
+        final val POSITIVE_INFINITY // io.github.kormium.decimal/Decimal.Companion.POSITIVE_INFINITY|{}POSITIVE_INFINITY[0]
+            final fun <get-POSITIVE_INFINITY>(): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/Decimal.Companion.POSITIVE_INFINITY.<get-POSITIVE_INFINITY>|<get-POSITIVE_INFINITY>(){}[0]
+        final val TEN // io.github.kormium.decimal/Decimal.Companion.TEN|{}TEN[0]
+            final fun <get-TEN>(): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/Decimal.Companion.TEN.<get-TEN>|<get-TEN>(){}[0]
+        final val ZERO // io.github.kormium.decimal/Decimal.Companion.ZERO|{}ZERO[0]
+            final fun <get-ZERO>(): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/Decimal.Companion.ZERO.<get-ZERO>|<get-ZERO>(){}[0]
+
+        final fun fromDouble(kotlin/Double): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/Decimal.Companion.fromDouble|fromDouble(kotlin.Double){}[0]
+        final fun invoke(kotlin/String): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/Decimal.Companion.invoke|invoke(kotlin.String){}[0]
+        final fun of(kotlin/Int): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/Decimal.Companion.of|of(kotlin.Int){}[0]
+        final fun of(kotlin/Long): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/Decimal.Companion.of|of(kotlin.Long){}[0]
+        final fun of(kotlin/Long, kotlin/Int): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/Decimal.Companion.of|of(kotlin.Long;kotlin.Int){}[0]
+        final fun parse(kotlin/String): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/Decimal.Companion.parse|parse(kotlin.String){}[0]
+    }
+}
+
+final fun (kotlin/Double).io.github.kormium.decimal/toDecimal(): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/toDecimal|toDecimal@kotlin.Double(){}[0]
+final fun (kotlin/Int).io.github.kormium.decimal/toDecimal(): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/toDecimal|toDecimal@kotlin.Int(){}[0]
+final fun (kotlin/Long).io.github.kormium.decimal/toDecimal(): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/toDecimal|toDecimal@kotlin.Long(){}[0]
+final fun (kotlin/String).io.github.kormium.decimal/toDecimal(): io.github.kormium.decimal/Decimal // io.github.kormium.decimal/toDecimal|toDecimal@kotlin.String(){}[0]

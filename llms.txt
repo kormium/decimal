@@ -1,0 +1,13 @@
+# decimal
+
+> Arbitrary-precision decimal value type for Kotlin Multiplatform. Zero dependencies, pure
+> common Kotlin, all KMP targets (JVM/JS/Wasm/Native). Semantics match java.math.BigDecimal
+> (verified by differential testing against it), except equals is value-based (2.5 == 2.50)
+> and NaN/±Infinity exist as first-class values. Exact plus/minus/times + setScale rounding;
+> division arrives in 0.2.0. Package `io.github.kormium.decimal`, type `Decimal`.
+
+Start with [AGENTS.md](AGENTS.md) — copy-ready snippets and the rules that matter
+(exact construction, explicit rounding, special-value checks).
+
+- [README.md](README.md): semantics table vs java.math.BigDecimal, quality/verification story
+- [CHANGELOG.md](CHANGELOG.md): what shipped when
