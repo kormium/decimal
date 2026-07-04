@@ -27,8 +27,6 @@ price.toPlainString()                        // "19.99"
 price.toDouble()                             // 19.99 (correctly rounded)
 ```
 
-Not published to Maven Central yet — v0.1.0 is imminent:
-
 ```kotlin
 dependencies {
     implementation("io.github.kormium:decimal:0.1.0")
