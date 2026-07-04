@@ -7,6 +7,14 @@ All notable changes are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- Division: `div(other, scale, roundingMode)` (both always explicit — deliberately no `/`
+  operator), `divideToIntegral` (java preferred-scale semantics) and the exact `%` operator
+  (sign follows the dividend). Division by zero always throws, even for special values.
+- Mixed-operand `+`, `-`, `×` with `Int` and `Long` in both directions, and `div`/`rem`
+  overloads (`Double` is deliberately excluded — binary-float noise must be converted
+  explicitly).
+- Benchmarks module (kotlinx-benchmark/JMH): `Decimal` vs `java.math.BigDecimal` vs
+  ionspin bignum, money-profile and 30-digit corpora, JVM + native.
 - `Decimal`: an immutable arbitrary-precision decimal value type in pure common Kotlin.
   `java.math.BigDecimal`-compatible parse/toString/toPlainString grammar and formatting,
   `scale`/`precision`/`signum`, `stripTrailingZeros`, `movePointLeft`/`movePointRight`,

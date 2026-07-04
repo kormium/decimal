@@ -57,12 +57,42 @@ additionally reject non-zero fractions, like their java namesakes.
 On the JVM, `toJavaBigDecimal()` / `BigDecimal.toKormiumDecimal()` convert losslessly
 (scale preserved), so arithmetic-heavy JVM code can hop over and back freely.
 
+## Division
+
+Division is the one operation whose exact result usually does not exist (`1/3`), so
+`Decimal` makes the two decisions it forces — target scale and rounding — explicit,
+and deliberately ships **no `/` operator** that would pick them silently:
+
+```kotlin
+val unitPrice = total.div(quantity, scale = 2, roundingMode = RoundingMode.HALF_EVEN)
+val boxes = items.divideToIntegral(perBox)   // exact: integer part of the quotient
+val left = items % perBox                    // exact: remainder, sign follows the dividend
+```
+
+Division by zero always throws `ArithmeticException` — like `java.math`, unlike `Double`:
+a silent `Infinity` in money code is a bug that got away.
+
+## Serialization
+
+The core is zero-dependency by design, so it ships no `kotlinx-serialization` support —
+because the serializer you'd want is five lines, and string form is the only
+representation that survives every JSON parser's number handling:
+
+```kotlin
+object DecimalSerializer : KSerializer<Decimal> {
+    override val descriptor = PrimitiveSerialDescriptor("Decimal", PrimitiveKind.STRING)
+    override fun serialize(encoder: Encoder, value: Decimal) = encoder.encodeString(value.toString())
+    override fun deserialize(decoder: Decoder) = Decimal.parse(decoder.decodeString())
+}
+```
+
+Register it per-field (`@Serializable(with = DecimalSerializer::class)`), per-file, or
+contextually — standard `kotlinx-serialization` mechanics.
+
 ## What it is not (yet)
 
-- **Division lands in 0.2.0** (with explicit scale + rounding mode). Addition, subtraction,
-  multiplication and `setScale` rounding are in since 0.1.0.
 - No `MathContext`-style precision propagation — deliberately out of scope; results are exact
-  and you round explicitly with `setScale`.
+  and you round explicitly with `setScale` (or per-division).
 - Need heavy arbitrary-precision *math* (pow, sqrt, trig)? Use
   [ionspin/kotlin-multiplatform-bignum](https://github.com/ionspin/kotlin-multiplatform-bignum) —
   this library is a value type, not a calculator.
@@ -93,11 +123,11 @@ Kotlin — one implementation, no expect/actual, no platform delegation.
 
 ## Roadmap
 
-- **0.2.0** — division (`div(other, scale, roundingMode)`, `rem`, `divideToIntegral`),
-  benchmarks vs ionspin, `kotlinx-serialization` support module.
 - Long-significand fast path (compact `Long` representation for ≤18 digits) — API-invisible,
   benchmark-driven.
 - API reference (Dokka) on GitHub Pages.
+- Golden-corpus differential testing on the non-JVM platforms (corpus generated from the
+  JVM oracle).
 
 ## Origin
 

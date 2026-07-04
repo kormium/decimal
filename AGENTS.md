@@ -3,7 +3,7 @@
 Arbitrary-precision decimal value type for Kotlin Multiplatform. Package
 `io.github.kormium.decimal`, single artifact `io.github.kormium:decimal`. Semantics are
 `java.math.BigDecimal` except: `equals` is value-based (`2.5 == 2.50`), and `NaN`/`±Infinity`
-exist (ordered like `Double`). No division until 0.2.0.
+exist (ordered like `Double`).
 
 ## Idiomatic use
 
@@ -18,7 +18,13 @@ val c = 0.1.toDecimal()             // shortest double repr → 0.1 (not 0.10000
 // Arithmetic is exact; round explicitly
 val sum = a + b                     // scale = max(scales)
 val product = a * b                 // scale = sum of scales
+val tripled = a * 3                 // Int/Long mix in directly (Double deliberately doesn't)
 val money = product.setScale(2, RoundingMode.HALF_EVEN)
+
+// Division: scale + rounding are ALWAYS explicit (there is no / operator)
+val unit = a.div(b, scale = 2, roundingMode = RoundingMode.HALF_EVEN)
+val whole = a.divideToIntegral(b)   // exact integer part
+val rest = a % b                    // exact remainder, sign follows dividend
 
 // Compare / print
 a == Decimal("12.5")                // true (value equality)
@@ -39,6 +45,8 @@ a.toJavaBigDecimal()                // JVM only, lossless both ways
   that's the point; pass an explicit mode when you expect to round.
 - Special values: check `isFinite` before `toLong`/`toPlainString`/`toJavaBigDecimal` if the
   value can be `NaN`/`Infinity` (e.g. read from PostgreSQL `numeric`).
+- kotlinx-serialization: no bundled serializer (zero-dependency core); copy the five-line
+  string-based `DecimalSerializer` from the README's Serialization section.
 
 ## Project layout
 

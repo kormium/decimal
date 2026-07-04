@@ -13,3 +13,4 @@ plugins {
 rootProject.name = "kormium-decimal"
 
 include(":decimal")
+include(":benchmarks")
