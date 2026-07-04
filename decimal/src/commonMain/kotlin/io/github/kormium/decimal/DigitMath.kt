@@ -86,4 +86,26 @@ internal object DigitMath {
 
     /** `a + 1` of a digit string. */
     fun increment(a: String): String = add(a, "1")
+
+    /**
+     * Integer division of two digit strings: quotient and remainder. Schoolbook long
+     * division — one pass over [n]'s digits, at most 9 subtractions of [d] per position.
+     */
+    fun divide(n: String, d: String): Pair<String, String> {
+        require(d != "0") { "Division by zero" }
+        if (compare(n, d) < 0) return "0" to n
+        val quotient = StringBuilder(n.length)
+        var rem = ""
+        for (c in n) {
+            var acc = stripLeadingZeros(rem + c)
+            var q = 0
+            while (compare(acc, d) >= 0) {
+                acc = subtract(acc, d)
+                q++
+            }
+            quotient.append('0' + q)
+            rem = if (acc == "0") "" else acc
+        }
+        return stripLeadingZeros(quotient.toString()) to (rem.ifEmpty { "0" })
+    }
 }

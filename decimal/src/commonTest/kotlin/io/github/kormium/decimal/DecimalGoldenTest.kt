@@ -221,6 +221,49 @@ class DecimalGoldenTest {
         assertEquals(Decimal.NaN, Decimal.NaN * Decimal.NaN)
     }
 
+    @Test
+    fun division() {
+        assertEquals("2.50", Decimal("5.0").div(Decimal("2"), 2, RoundingMode.UNNECESSARY).toString())
+        assertEquals("0.33333", Decimal("1").div(Decimal("3"), 5, RoundingMode.HALF_UP).toString())
+        assertEquals("0.66667", Decimal("2").div(Decimal("3"), 5, RoundingMode.HALF_UP).toString())
+        assertEquals("-0.66667", Decimal("-2").div(Decimal("3"), 5, RoundingMode.HALF_UP).toString())
+        assertEquals("-0.66666", Decimal("-2").div(Decimal("3"), 5, RoundingMode.CEILING).toString())
+        assertEquals("3E+1", Decimal("100").div(Decimal("3"), -1, RoundingMode.DOWN).toString())
+        assertEquals("6.67", Decimal("20").div(3, 2, RoundingMode.HALF_UP).toString())
+        assertFailsWith<ArithmeticException> { Decimal("1").div(Decimal("3"), 5, RoundingMode.UNNECESSARY) }
+        assertFailsWith<ArithmeticException> { Decimal("1").div(Decimal.ZERO, 2, RoundingMode.HALF_UP) }
+        assertFailsWith<ArithmeticException> { Decimal.ZERO.div(Decimal("0.0"), 2, RoundingMode.HALF_UP) }
+        assertEquals("0.00", Decimal.ZERO.div(Decimal("3"), 2, RoundingMode.HALF_UP).toString())
+        // Specials
+        assertEquals(Decimal.NaN, Decimal.NaN.div(Decimal.ONE, 2, RoundingMode.HALF_UP))
+        assertEquals(Decimal.NaN, Decimal.POSITIVE_INFINITY.div(Decimal.NEGATIVE_INFINITY, 2, RoundingMode.HALF_UP))
+        assertEquals(Decimal.NEGATIVE_INFINITY, Decimal.POSITIVE_INFINITY.div(Decimal("-2"), 2, RoundingMode.HALF_UP))
+        assertEquals(Decimal.ZERO, Decimal("5").div(Decimal.POSITIVE_INFINITY, 2, RoundingMode.HALF_UP))
+    }
+
+    @Test
+    fun integralDivisionAndRemainder() {
+        assertEquals("2", Decimal("7").divideToIntegral(Decimal("3")).toString())
+        assertEquals("1", (Decimal("7") % Decimal("3")).toString())
+        assertEquals("-2", Decimal("-7").divideToIntegral(Decimal("3")).toString())
+        assertEquals("-1", (Decimal("-7") % Decimal("3")).toString()) // sign follows the dividend
+        assertEquals("1", (Decimal("7") % Decimal("-3")).toString())
+        assertEquals("0.5", (Decimal("5.5") % Decimal("2.5")).toString())
+        assertEquals("1", (Decimal("7") % 3).toString())
+        assertFailsWith<ArithmeticException> { Decimal("7") % Decimal.ZERO }
+        assertEquals(Decimal("7"), Decimal("7") % Decimal.POSITIVE_INFINITY)
+        assertEquals(Decimal.NaN, Decimal.POSITIVE_INFINITY % Decimal("3"))
+    }
+
+    @Test
+    fun mixedOperators() {
+        assertEquals(Decimal("59.97"), Decimal("19.99") * 3)
+        assertEquals(Decimal("59.97"), 3 * Decimal("19.99"))
+        assertEquals(Decimal("21"), Decimal("20") + 1L)
+        assertEquals(Decimal("19"), 20L - Decimal("1"))
+        assertEquals(Decimal("-19"), Decimal("1") - 20)
+    }
+
     // ---- setScale rounding: the java.math.RoundingMode javadoc table ----
 
     @Test

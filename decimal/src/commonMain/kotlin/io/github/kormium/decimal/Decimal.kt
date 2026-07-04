@@ -211,6 +211,114 @@ public class Decimal private constructor(
         return finite(negative != other.negative, DigitMath.multiply(digits, other.digits), newScale.toInt())
     }
 
+    /**
+     * `this / other`, rounded to [scale] with [roundingMode] — both are always explicit
+     * because most quotients (`1/3`) have no exact decimal representation; there is
+     * deliberately no `/` operator that would pick them silently.
+     *
+     * Division by a zero [other] throws [ArithmeticException] (like `java.math.BigDecimal`,
+     * unlike [Double] — silent infinities hide bugs in money code). `NaN` propagates;
+     * `Infinity / finite` is infinite, `finite / Infinity` is zero, `Infinity / Infinity` is [NaN].
+     */
+    public fun div(other: Decimal, scale: Int, roundingMode: RoundingMode): Decimal {
+        if (special != FINITE || other.special != FINITE) {
+            if (isNaN || other.isNaN) return NaN
+            if (other.isZero) throw ArithmeticException("Division by zero")
+            if (isInfinite && other.isInfinite) return NaN
+            if (isInfinite) {
+                return if ((special == SP_NEG_INF) != (other.signum() < 0)) NEGATIVE_INFINITY else POSITIVE_INFINITY
+            }
+            return finite(false, "0", scale) // finite / ±Infinity
+        }
+        if (other.isZero) throw ArithmeticException("Division by zero")
+        if (isZero) return finite(false, "0", scale)
+        // this/other × 10^scale = digits × 10^shift / other.digits, with shift folding all scales.
+        val shift = scale.toLong() - this.scale + other.scale
+        if (shift > MAX_PLAIN_PAD || -shift > MAX_PLAIN_PAD) throw ArithmeticException("Scale overflow: $scale")
+        val n = if (shift >= 0) padZerosRight(digits, shift.toInt()) else digits
+        val d = if (shift >= 0) other.digits else padZerosRight(other.digits, (-shift).toInt())
+        val (q, r) = DigitMath.divide(n, d)
+        val negResult = negative != other.negative
+        if (r == "0") return finite(negResult, q, scale)
+        val increment = when (roundingMode) {
+            RoundingMode.UP -> true
+            RoundingMode.DOWN -> false
+            RoundingMode.CEILING -> !negResult
+            RoundingMode.FLOOR -> negResult
+            RoundingMode.HALF_UP -> DigitMath.compare(DigitMath.add(r, r), d) >= 0
+            RoundingMode.HALF_DOWN -> DigitMath.compare(DigitMath.add(r, r), d) > 0
+            RoundingMode.HALF_EVEN -> {
+                val c = DigitMath.compare(DigitMath.add(r, r), d)
+                c > 0 || (c == 0 && (q.last() - '0') % 2 == 1)
+            }
+            RoundingMode.UNNECESSARY -> throw ArithmeticException("Rounding necessary")
+        }
+        return finite(negResult, if (increment) DigitMath.increment(q) else q, scale)
+    }
+
+    /**
+     * The integer part of `this / other` (an exact operation — no rounding mode needed).
+     * The result's scale follows `java.math.BigDecimal.divideToIntegralValue`'s preferred
+     * scale, `this.scale - other.scale`, so far as trailing zeros allow.
+     */
+    public fun divideToIntegral(other: Decimal): Decimal {
+        if (special != FINITE || other.special != FINITE) {
+            if (isNaN || other.isNaN) return NaN
+            if (other.isZero) throw ArithmeticException("Division by zero")
+            if (isInfinite && other.isInfinite) return NaN
+            if (isInfinite) {
+                return if ((special == SP_NEG_INF) != (other.signum() < 0)) NEGATIVE_INFINITY else POSITIVE_INFINITY
+            }
+            return ZERO // finite / ±Infinity
+        }
+        if (other.isZero) throw ArithmeticException("Division by zero")
+        val preferred = scale.toLong() - other.scale
+        if (isZero) return zeroWithPreferredScale(preferred)
+        // |this| / |other| = digits × 10^(other.scale - scale) / other.digits, integer part.
+        val shift = other.scale.toLong() - scale
+        if (shift > MAX_PLAIN_PAD || -shift > MAX_PLAIN_PAD) throw ArithmeticException("Scale overflow")
+        val n = if (shift >= 0) padZerosRight(digits, shift.toInt()) else digits
+        val d = if (shift >= 0) other.digits else padZerosRight(other.digits, (-shift).toInt())
+        val (q, _) = DigitMath.divide(n, d)
+        if (q == "0") return zeroWithPreferredScale(preferred)
+        val integral = finite(negative != other.negative, q, 0)
+        return integral.adjustTowardPreferredScale(preferred)
+    }
+
+    /**
+     * The remainder: `this - divideToIntegral(other) × other` (exact, so the operator is
+     * safe — no hidden rounding). The sign follows this dividend, like `java.math`'s
+     * `remainder` and Kotlin's `Long.rem`. Throws [ArithmeticException] on a zero [other];
+     * `finite % Infinity` is `this`, any other non-finite operand yields [NaN].
+     */
+    public operator fun rem(other: Decimal): Decimal {
+        if (special != FINITE || other.special != FINITE) {
+            if (other.isZero) throw ArithmeticException("Division by zero")
+            if (special == FINITE && other.isInfinite) return this
+            return NaN
+        }
+        if (other.isZero) throw ArithmeticException("Division by zero")
+        return this - divideToIntegral(other) * other
+    }
+
+    private fun zeroWithPreferredScale(preferred: Long): Decimal =
+        finite(false, "0", preferred.coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt())
+
+    /** Grows toward a positive preferred scale exactly; shrinks only as trailing zeros allow. */
+    private fun adjustTowardPreferredScale(preferred: Long): Decimal {
+        if (preferred >= scale) {
+            val target = preferred.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            return setScale(target)
+        }
+        var end = digits.length
+        var s = scale.toLong()
+        while (end > 1 && s > preferred && digits[end - 1] == '0') {
+            end--
+            s--
+        }
+        return if (end == digits.length) this else finite(negative, digits.substring(0, end), s.toInt())
+    }
+
     // ---- comparison / equality ----
 
     /**
