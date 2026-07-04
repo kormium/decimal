@@ -1,6 +1,6 @@
 public final class io/github/kormium/decimal/Decimal : java/lang/Comparable {
 	public static final field Companion Lio/github/kormium/decimal/Decimal$Companion;
-	public synthetic fun <init> (ZLjava/lang/String;IBLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (ZJLjava/lang/String;IBLkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun abs ()Lio/github/kormium/decimal/Decimal;
 	public fun compareTo (Lio/github/kormium/decimal/Decimal;)I
 	public synthetic fun compareTo (Ljava/lang/Object;)I

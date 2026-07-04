@@ -115,6 +115,41 @@ That makes it ideal for **differential testing**, and that is the core of the te
   with klib validation — the public API surface is dumped in [`decimal/api`](decimal/api) and
   checked on every commit.
 
+## Performance
+
+Significands of up to 18 digits live in a `Long` (like `java.math`'s `intCompact`), so the
+money-shaped values that dominate real workloads never touch string arithmetic. Measured
+with the [benchmarks module](benchmarks) (JMH on the JVM, kotlinx-benchmark's native
+harness) on an Apple-silicon MacBook, JDK 21, Kotlin 2.4.0 — **µs per sweep of 256 values**,
+lower is better. "Money" is a `NUMERIC(12,2)`-shaped corpus; "large" is 30-34 digits.
+
+| JVM | `Decimal` | `java.math` | ionspin 0.3.10 |
+|---|---:|---:|---:|
+| parse (money) | 6.8 | 7.3 | 151.7 |
+| toString (money) | 7.5 | 0.2 | 132.3 |
+| compareTo (money) | 2.2 | 0.6 | 28.1 |
+| plus (money) | 1.9 | 1.8 | 94.9 |
+| times (money) | 54.0 | 5.1 | 66.5 |
+| parse (large) | 31.4 | 47.5 | 573.1 |
+| times (large) | 675.0 | 9.6 | 193.6 |
+
+| Native (macosArm64) | `Decimal` | ionspin 0.3.10 |
+|---|---:|---:|
+| parse (money) | 22.0 | 550.2 |
+| toString (money) | 24.9 | 766.4 |
+| compareTo (money) | 8.2 | 76.8 |
+| plus (money) | 10.1 | 279.2 |
+| times (money) | 105.2 | 195.8 |
+| parse (large) | 99.3 | 1 561.9 |
+| times (large) | 903.0 | 495.8 |
+
+Read it honestly: on the money profile `Decimal` beats ionspin by 2-50× everywhere and
+matches `java.math` on parse and addition; `java.math` keeps a large lead on `toString`
+(a direct char-buffer writer — on the roadmap) and on multiplication (products beyond 18
+digits leave our `Long` path). On large-number **multiplication** ionspin's limb-based big
+integers win by design — heavy arbitrary-precision math is exactly the case where you
+should use ionspin instead (see above).
+
 ## Supported targets
 
 JVM (11+), JS, WasmJS, WasmWASI, and all Kotlin/Native tiers: Linux (x64, arm64),
@@ -123,8 +158,9 @@ Kotlin — one implementation, no expect/actual, no platform delegation.
 
 ## Roadmap
 
-- Long-significand fast path (compact `Long` representation for ≤18 digits) — API-invisible,
-  benchmark-driven.
+- Performance, benchmark-driven and API-invisible: direct char-buffer `toString` for the
+  compact form; a base-10⁹ two-limb product for 19-38-digit results (closes most of the
+  `times` gap); resuming the parse fast-scan where it bailed instead of re-scanning.
 - API reference (Dokka) on GitHub Pages.
 - Golden-corpus differential testing on the non-JVM platforms (corpus generated from the
   JVM oracle).

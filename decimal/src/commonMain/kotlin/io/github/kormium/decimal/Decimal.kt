@@ -22,12 +22,19 @@ package io.github.kormium.decimal
  *   propagates them IEEE-754-style. Conversions that cannot represent them throw
  *   [ArithmeticException].
  *
+ * Internally a significand of up to 18 digits lives in a [Long] (like `java.math`'s
+ * `intCompact`), so the money-shaped values that dominate real workloads never touch
+ * digit-string arithmetic; longer significands fall back to exact schoolbook string math.
+ * The representation is invisible in the API and covered by the same differential oracle.
+ *
  * Instances are immutable and safe to share across threads.
  */
 public class Decimal private constructor(
     private val negative: Boolean,
-    /** Significand digits: `"0"` or digits with no leading zero and no sign. */
-    private val digits: String,
+    /** Magnitude when it fits 18 digits ([digitsOrNull] == null), else -1. */
+    private val compact: Long,
+    /** Significand digits (no leading zero, no sign) when the magnitude needs >18 digits. */
+    private val digitsOrNull: String?,
     /**
      * Number of significand digits to the right of the decimal point; negative values
      * shift the point right (`12E+3` = significand 12, scale -3). 0 for special values.
@@ -36,8 +43,20 @@ public class Decimal private constructor(
     private val special: Byte,
 ) : Comparable<Decimal> {
 
+    /**
+     * Lazily materialized decimal digits of [compact], for the string-math slow paths.
+     * The benign data race is deliberate (the computed value is identical either way) —
+     * the same trick `java.math.BigDecimal` uses for its `stringCache`.
+     */
+    private var digitsCache: String? = null
+
+    private val digits: String
+        get() = digitsOrNull ?: digitsCache ?: compact.toString().also { digitsCache = it }
+
+    private inline val isCompact: Boolean get() = digitsOrNull == null
+
     /** Number of digits in the significand (1 for zero and for special values). */
-    public val precision: Int get() = digits.length
+    public val precision: Int get() = digitsOrNull?.length ?: digitCount(compact)
 
     /** True for every value except [NaN], [POSITIVE_INFINITY] and [NEGATIVE_INFINITY]. */
     public val isFinite: Boolean get() = special == FINITE
@@ -49,7 +68,7 @@ public class Decimal private constructor(
     public val isInfinite: Boolean get() = special == SP_POS_INF || special == SP_NEG_INF
 
     /** True for a zero of any scale (`0`, `0.00`, `0E+5`). */
-    public val isZero: Boolean get() = special == FINITE && digits == "0"
+    public val isZero: Boolean get() = special == FINITE && compact == 0L
 
     /**
      * The sign: -1, 0 or 1. Infinities report ±1; [NaN] has no sign and throws
@@ -59,17 +78,18 @@ public class Decimal private constructor(
         SP_NAN -> throw ArithmeticException("NaN has no sign")
         SP_POS_INF -> 1
         SP_NEG_INF -> -1
-        else -> if (digits == "0") 0 else if (negative) -1 else 1
+        else -> if (compact == 0L) 0 else if (negative) -1 else 1
     }
 
     // ---- sign / point movement ----
 
     /** The negation of this value. */
-    public operator fun unaryMinus(): Decimal = when (special) {
-        SP_NAN -> this
-        SP_POS_INF -> NEGATIVE_INFINITY
-        SP_NEG_INF -> POSITIVE_INFINITY
-        else -> finite(!negative, digits, scale)
+    public operator fun unaryMinus(): Decimal = when {
+        special == SP_NAN -> this
+        special == SP_POS_INF -> NEGATIVE_INFINITY
+        special == SP_NEG_INF -> POSITIVE_INFINITY
+        isZero -> this
+        else -> Decimal(!negative, compact, digitsOrNull, scale, FINITE)
     }
 
     /** This value, kept as-is (present for symmetry with [unaryMinus]). */
@@ -91,7 +111,8 @@ public class Decimal private constructor(
         val newScale = scale.toLong() + n
         if (newScale >= 0) {
             checkScale(newScale)
-            return finite(negative, digits, newScale.toInt())
+            return if (isCompact) finiteCompact(negative, compact, newScale.toInt())
+            else finite(negative, digits, newScale.toInt())
         }
         if (-newScale > MAX_PLAIN_PAD) throw ArithmeticException("Scale overflow: $newScale")
         return finite(negative, padZerosRight(digits, (-newScale).toInt()), 0)
@@ -110,7 +131,18 @@ public class Decimal private constructor(
      */
     public fun stripTrailingZeros(): Decimal {
         if (special != FINITE) return this
-        if (digits == "0") return if (scale == 0) this else finite(false, "0", 0)
+        if (isZero) return if (scale == 0) this else ZERO
+        if (isCompact) {
+            var c = compact
+            var newScale = scale.toLong()
+            while (c % 10L == 0L) {
+                c /= 10L
+                newScale--
+            }
+            if (c == compact) return this
+            checkScale(newScale)
+            return finiteCompact(negative, c, newScale.toInt())
+        }
         var end = digits.length
         var newScale = scale.toLong()
         while (end > 1 && digits[end - 1] == '0') {
@@ -130,36 +162,51 @@ public class Decimal private constructor(
      */
     public fun setScale(newScale: Int, roundingMode: RoundingMode = RoundingMode.UNNECESSARY): Decimal {
         if (special != FINITE || newScale == scale) return this
+        if (isZero) return finiteCompact(false, 0L, newScale)
         if (newScale > scale) {
-            if (digits == "0") return finite(false, "0", newScale)
-            return finite(negative, padZerosRight(digits, newScale - scale), newScale)
+            val grow = newScale.toLong() - scale
+            if (isCompact && grow < 19 && compact <= MAX_COMPACT / POW10[grow.toInt()]) {
+                return finiteCompact(negative, compact * POW10[grow.toInt()], newScale)
+            }
+            if (grow > MAX_PLAIN_PAD) throw ArithmeticException("Scale overflow: $newScale")
+            return finite(negative, padZerosRight(digits, grow.toInt()), newScale)
         }
-        val drop = scale.toLong() - newScale // > 0; may exceed digits.length
+        val drop = scale.toLong() - newScale // > 0; may exceed the digit count
+        if (isCompact) {
+            val q: Long
+            val firstDropped: Int
+            val restNonZero: Boolean
+            if (drop < 19) {
+                val p = POW10[drop.toInt()]
+                val sub = p / 10L
+                val r = compact % p
+                q = compact / p
+                firstDropped = (r / sub).toInt()
+                restNonZero = r % sub != 0L
+            } else {
+                // Every digit is dropped, behind at least one virtual leading zero.
+                q = 0L
+                firstDropped = 0
+                restNonZero = true // compact != 0 (zero returned above)
+            }
+            if (firstDropped == 0 && !restNonZero) return finiteCompact(negative, q, newScale)
+            val increment = shouldIncrement(roundingMode, negative, '0' + firstDropped, restNonZero, oddLastDigit = q % 2L != 0L)
+            return finiteCompact(negative, if (increment) q + 1 else q, newScale)
+        }
         val kept = if (drop >= digits.length) "0" else digits.substring(0, digits.length - drop.toInt())
         val firstDropped: Char
         val restNonZero: Boolean
         if (drop > digits.length) {
             // The dropped block is the whole significand preceded by virtual leading zeros.
             firstDropped = '0'
-            restNonZero = digits != "0"
+            restNonZero = true
         } else {
             val cut = digits.length - drop.toInt()
             firstDropped = digits[cut]
             restNonZero = hasNonZero(digits, cut + 1)
         }
-        val droppedNonZero = firstDropped != '0' || restNonZero
-        if (!droppedNonZero) return finite(negative, kept, newScale)
-        val increment = when (roundingMode) {
-            RoundingMode.UP -> true
-            RoundingMode.DOWN -> false
-            RoundingMode.CEILING -> !negative
-            RoundingMode.FLOOR -> negative
-            RoundingMode.HALF_UP -> firstDropped >= '5'
-            RoundingMode.HALF_DOWN -> firstDropped > '5' || (firstDropped == '5' && restNonZero)
-            RoundingMode.HALF_EVEN ->
-                firstDropped > '5' || (firstDropped == '5' && (restNonZero || (kept.last() - '0') % 2 == 1))
-            RoundingMode.UNNECESSARY -> throw ArithmeticException("Rounding necessary")
-        }
+        if (firstDropped == '0' && !restNonZero) return finite(negative, kept, newScale)
+        val increment = shouldIncrement(roundingMode, negative, firstDropped, restNonZero, oddLastDigit = (kept.last() - '0') % 2 == 1)
         return finite(negative, if (increment) DigitMath.increment(kept) else kept, newScale)
     }
 
@@ -176,8 +223,19 @@ public class Decimal private constructor(
             return if (isInfinite) this else other
         }
         val s = maxOf(scale, other.scale)
+        if (isZero) return other.setScale(s)
+        if (other.isZero) return setScale(s)
         val padA = s.toLong() - scale
         val padB = s.toLong() - other.scale
+        if (isCompact && other.isCompact) {
+            val a = alignedOrNegative(compact, padA)
+            val b = alignedOrNegative(other.compact, padB)
+            if (a >= 0L && b >= 0L) {
+                // |±a ± b| ≤ 2×MAX_COMPACT, far from Long overflow.
+                val sum = (if (negative) -a else a) + (if (other.negative) -b else b)
+                return finiteCompact(sum < 0L, if (sum < 0L) -sum else sum, s)
+            }
+        }
         if (padA > MAX_PLAIN_PAD || padB > MAX_PLAIN_PAD) {
             throw ArithmeticException("Scale difference too large to align: $scale vs ${other.scale}")
         }
@@ -186,7 +244,7 @@ public class Decimal private constructor(
         if (negative == other.negative) return finite(negative, DigitMath.add(a, b), s)
         val c = DigitMath.compare(a, b)
         return when {
-            c == 0 -> finite(false, "0", s)
+            c == 0 -> finiteCompact(false, 0L, s)
             c > 0 -> finite(negative, DigitMath.subtract(a, b), s)
             else -> finite(other.negative, DigitMath.subtract(b, a), s)
         }
@@ -208,6 +266,13 @@ public class Decimal private constructor(
         }
         val newScale = scale.toLong() + other.scale
         checkScale(newScale)
+        if (isZero || other.isZero) return finiteCompact(false, 0L, newScale.toInt())
+        // Long fast path whenever the product provably fits a Long (both are non-zero here);
+        // a 19-digit product falls out of the compact form inside finiteCompact, which is
+        // still far cheaper than digit-string multiplication.
+        if (isCompact && other.isCompact && compact <= Long.MAX_VALUE / other.compact) {
+            return finiteCompact(negative != other.negative, compact * other.compact, newScale.toInt())
+        }
         return finite(negative != other.negative, DigitMath.multiply(digits, other.digits), newScale.toInt())
     }
 
@@ -228,17 +293,38 @@ public class Decimal private constructor(
             if (isInfinite) {
                 return if ((special == SP_NEG_INF) != (other.signum() < 0)) NEGATIVE_INFINITY else POSITIVE_INFINITY
             }
-            return finite(false, "0", scale) // finite / ±Infinity
+            return finiteCompact(false, 0L, scale) // finite / ±Infinity
         }
         if (other.isZero) throw ArithmeticException("Division by zero")
-        if (isZero) return finite(false, "0", scale)
+        if (isZero) return finiteCompact(false, 0L, scale)
         // this/other × 10^scale = digits × 10^shift / other.digits, with shift folding all scales.
         val shift = scale.toLong() - this.scale + other.scale
         if (shift > MAX_PLAIN_PAD || -shift > MAX_PLAIN_PAD) throw ArithmeticException("Scale overflow: $scale")
+        val negResult = negative != other.negative
+        if (isCompact && other.isCompact) {
+            val n = alignedOrNegative(compact, maxOf(shift, 0L))
+            val d = alignedOrNegative(other.compact, maxOf(-shift, 0L))
+            if (n >= 0L && d >= 0L) {
+                val q = n / d
+                val r = n % d
+                if (r == 0L) return finiteCompact(negResult, q, scale)
+                val increment = when (roundingMode) {
+                    RoundingMode.UP -> true
+                    RoundingMode.DOWN -> false
+                    RoundingMode.CEILING -> !negResult
+                    RoundingMode.FLOOR -> negResult
+                    // r < MAX_COMPACT ≤ Long.MAX/2, so 2r cannot overflow.
+                    RoundingMode.HALF_UP -> 2L * r >= d
+                    RoundingMode.HALF_DOWN -> 2L * r > d
+                    RoundingMode.HALF_EVEN -> 2L * r > d || (2L * r == d && q % 2L != 0L)
+                    RoundingMode.UNNECESSARY -> throw ArithmeticException("Rounding necessary")
+                }
+                return finiteCompact(negResult, if (increment) q + 1L else q, scale)
+            }
+        }
         val n = if (shift >= 0) padZerosRight(digits, shift.toInt()) else digits
         val d = if (shift >= 0) other.digits else padZerosRight(other.digits, (-shift).toInt())
         val (q, r) = DigitMath.divide(n, d)
-        val negResult = negative != other.negative
         if (r == "0") return finite(negResult, q, scale)
         val increment = when (roundingMode) {
             RoundingMode.UP -> true
@@ -277,12 +363,21 @@ public class Decimal private constructor(
         // |this| / |other| = digits × 10^(other.scale - scale) / other.digits, integer part.
         val shift = other.scale.toLong() - scale
         if (shift > MAX_PLAIN_PAD || -shift > MAX_PLAIN_PAD) throw ArithmeticException("Scale overflow")
+        val negResult = negative != other.negative
+        if (isCompact && other.isCompact) {
+            val n = alignedOrNegative(compact, maxOf(shift, 0L))
+            val d = alignedOrNegative(other.compact, maxOf(-shift, 0L))
+            if (n >= 0L && d >= 0L) {
+                val q = n / d
+                if (q == 0L) return zeroWithPreferredScale(preferred)
+                return finiteCompact(negResult, q, 0).adjustTowardPreferredScale(preferred)
+            }
+        }
         val n = if (shift >= 0) padZerosRight(digits, shift.toInt()) else digits
         val d = if (shift >= 0) other.digits else padZerosRight(other.digits, (-shift).toInt())
         val (q, _) = DigitMath.divide(n, d)
         if (q == "0") return zeroWithPreferredScale(preferred)
-        val integral = finite(negative != other.negative, q, 0)
-        return integral.adjustTowardPreferredScale(preferred)
+        return finite(negResult, q, 0).adjustTowardPreferredScale(preferred)
     }
 
     /**
@@ -302,13 +397,22 @@ public class Decimal private constructor(
     }
 
     private fun zeroWithPreferredScale(preferred: Long): Decimal =
-        finite(false, "0", preferred.coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt())
+        finiteCompact(false, 0L, preferred.coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt())
 
     /** Grows toward a positive preferred scale exactly; shrinks only as trailing zeros allow. */
     private fun adjustTowardPreferredScale(preferred: Long): Decimal {
         if (preferred >= scale) {
             val target = preferred.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
             return setScale(target)
+        }
+        if (isCompact) {
+            var c = compact
+            var s = scale.toLong()
+            while (s > preferred && c % 10L == 0L) {
+                c /= 10L
+                s--
+            }
+            return if (c == compact) this else finiteCompact(negative, c, s.toInt())
         }
         var end = digits.length
         var s = scale.toLong()
@@ -326,6 +430,7 @@ public class Decimal private constructor(
      * `-Infinity < finite < Infinity < NaN` (and `NaN` compares equal to itself).
      */
     override fun compareTo(other: Decimal): Int {
+        if (this === other) return 0
         val r = rank()
         val ro = other.rank()
         if (r != ro) return r.compareTo(ro)
@@ -347,16 +452,25 @@ public class Decimal private constructor(
     /** Compares |this| with |other|; both finite and non-zero. */
     private fun compareMagnitude(other: Decimal): Int {
         // Position of the most significant digit relative to the decimal point.
-        val exp = precision.toLong() - scale
-        val expO = other.precision.toLong() - other.scale
+        val p1 = precision
+        val p2 = other.precision
+        val exp = p1.toLong() - scale
+        val expO = p2.toLong() - other.scale
         if (exp != expO) return exp.compareTo(expO)
-        // Same magnitude order: compare digit-by-digit, the shorter padded with zeros.
-        val shorter = minOf(digits.length, other.digits.length)
-        for (i in 0 until shorter) {
-            if (digits[i] != other.digits[i]) return digits[i].compareTo(other.digits[i])
+        if (isCompact && other.isCompact) {
+            // Same MSD position and both ≤18 digits: align the shorter and compare exactly.
+            return if (p1 >= p2) compact.compareTo(other.compact * POW10[p1 - p2])
+            else (compact * POW10[p2 - p1]).compareTo(other.compact)
         }
-        if (hasNonZero(digits, shorter)) return 1
-        if (hasNonZero(other.digits, shorter)) return -1
+        // Same magnitude order: compare digit-by-digit, the shorter padded with zeros.
+        val a = digits
+        val b = other.digits
+        val shorter = minOf(a.length, b.length)
+        for (i in 0 until shorter) {
+            if (a[i] != b[i]) return a[i].compareTo(b[i])
+        }
+        if (hasNonZero(a, shorter)) return 1
+        if (hasNonZero(b, shorter)) return -1
         return 0
     }
 
@@ -374,13 +488,24 @@ public class Decimal private constructor(
             SP_NEG_INF -> return -3
             else -> {}
         }
-        if (digits == "0") return 0
+        if (isZero) return 0
         // Normalize away trailing zeros so equal values hash equally; the position of the
         // most significant digit (precision - scale) is unchanged by that normalization.
-        var end = digits.length
-        while (end > 1 && digits[end - 1] == '0') end--
         var h = if (negative) 31 else 17
-        for (i in 0 until end) h = h * 31 + digits[i].code
+        if (isCompact) {
+            var c = compact
+            while (c % 10L == 0L) c /= 10L
+            var pow = POW10[digitCount(c) - 1]
+            while (pow > 0L) {
+                h = h * 31 + ('0' + (c / pow).toInt()).code
+                c %= pow
+                pow /= 10L
+            }
+        } else {
+            var end = digits.length
+            while (end > 1 && digits[end - 1] == '0') end--
+            for (i in 0 until end) h = h * 31 + digits[i].code
+        }
         return h * 31 + (precision.toLong() - scale).hashCode()
     }
 
@@ -399,13 +524,18 @@ public class Decimal private constructor(
             SP_NEG_INF -> return "-Infinity"
             else -> {}
         }
-        if (scale == 0) return signPrefix() + digits
-        val adjusted = precision.toLong() - 1 - scale
-        if (scale > 0 && adjusted >= -6) return signPrefix() + plainBody()
+        if (scale == 0) {
+            if (!negative) return digits // Long.toString / cached — the hot money-integer case
+            return buildString(digits.length + 1) { append('-').append(digits) }
+        }
+        val ds = digits
+        val adjusted = ds.length.toLong() - 1 - scale
+        if (scale > 0 && adjusted >= -6) return plainString(ds)
         // Scientific: one digit, optional fraction, explicit exponent sign (java prints E+7).
-        val sb = StringBuilder(signPrefix())
-        sb.append(digits[0])
-        if (digits.length > 1) sb.append('.').append(digits, 1, digits.length)
+        val sb = StringBuilder(ds.length + 8)
+        if (negative) sb.append('-')
+        sb.append(ds[0])
+        if (ds.length > 1) sb.append('.').append(ds, 1, ds.length)
         sb.append('E')
         if (adjusted >= 0) sb.append('+')
         sb.append(adjusted)
@@ -418,32 +548,32 @@ public class Decimal private constructor(
      */
     public fun toPlainString(): String {
         requireFinite("toPlainString")
-        if (scale == 0) return signPrefix() + digits
+        val ds = digits
+        if (scale == 0) return if (negative) "-$ds" else ds
         if (scale < 0) {
             val shift = -scale.toLong()
             if (shift > MAX_PLAIN_PAD) throw ArithmeticException("toPlainString would need $shift padding zeros")
-            return signPrefix() + padZerosRight(digits, shift.toInt())
+            val padded = padZerosRight(ds, shift.toInt())
+            return if (negative) "-$padded" else padded
         }
-        return signPrefix() + plainBody()
+        return plainString(ds)
     }
 
-    /** Digits with the point inserted; only for `scale > 0`. */
-    private fun plainBody(): String {
-        val intLen = digits.length - scale
-        return if (intLen > 0) {
-            buildString(digits.length + 1) {
-                append(digits, 0, intLen).append('.').append(digits, intLen, digits.length)
-            }
-        } else {
-            buildString(scale + 2) {
+    /** Plain notation with the point inserted; only for `scale > 0`. */
+    private fun plainString(ds: String): String {
+        val intLen = ds.length - scale
+        val size = (if (negative) 1 else 0) + (if (intLen > 0) ds.length + 1 else scale + 2)
+        return buildString(size) {
+            if (negative) append('-')
+            if (intLen > 0) {
+                append(ds, 0, intLen).append('.').append(ds, intLen, ds.length)
+            } else {
                 append("0.")
                 repeat(-intLen) { append('0') }
-                append(digits)
+                append(ds)
             }
         }
     }
-
-    private fun signPrefix(): String = if (negative) "-" else ""
 
     // ---- conversions ----
 
@@ -456,7 +586,10 @@ public class Decimal private constructor(
         SP_NAN -> Double.NaN
         SP_POS_INF -> Double.POSITIVE_INFINITY
         SP_NEG_INF -> Double.NEGATIVE_INFINITY
-        else -> (signPrefix() + digits + "E" + (-scale.toLong())).toDouble()
+        else -> {
+            val sign = if (negative) "-" else ""
+            (sign + digits + "E" + (-scale.toLong())).toDouble()
+        }
     }
 
     /** The nearest [Float]; see [toDouble]. */
@@ -470,6 +603,20 @@ public class Decimal private constructor(
      */
     public fun toLong(): Long {
         requireFinite("toLong")
+        if (isCompact) {
+            val whole = when {
+                scale == 0 -> compact
+                scale > 0 -> if (scale < 19) compact / POW10[scale] else 0L
+                else -> {
+                    val k = -scale.toLong()
+                    if (compact == 0L) 0L
+                    else if (k > 18 || compact > Long.MAX_VALUE / POW10[k.toInt()]) {
+                        throw ArithmeticException("Value $this does not fit in a Long")
+                    } else compact * POW10[k.toInt()]
+                }
+            }
+            return if (negative) -whole else whole
+        }
         val whole = wholeDigits()
         var acc = 0L // accumulate negated to reach Long.MIN_VALUE
         for (c in whole) {
@@ -507,11 +654,11 @@ public class Decimal private constructor(
         return toInt()
     }
 
-    /** The whole part of |this| as a digit string ("0" when |this| < 1). */
+    /** The whole part of |this| as a digit string ("0" when |this| < 1); string form only. */
     private fun wholeDigits(): String {
         val intLen = digits.length.toLong() - scale
         return when {
-            digits == "0" || intLen <= 0 -> "0"
+            isZero || intLen <= 0 -> "0"
             scale <= 0 -> {
                 if (intLen > MAX_PLAIN_PAD) throw ArithmeticException("Value $this does not fit in a Long")
                 padZerosRight(digits, -scale)
@@ -521,7 +668,10 @@ public class Decimal private constructor(
     }
 
     private fun hasFraction(): Boolean {
-        if (scale <= 0 || digits == "0") return false
+        if (scale <= 0 || isZero) return false
+        if (isCompact) {
+            return if (scale < 19) compact % POW10[scale] != 0L else true
+        }
         val cut = (digits.length - scale).coerceAtLeast(0)
         return hasNonZero(digits, cut)
     }
@@ -539,14 +689,23 @@ public class Decimal private constructor(
         /** toPlainString/toLong padding guard: beyond this many zeros the request is a bug. */
         private const val MAX_PLAIN_PAD = 1_000_000L
 
-        public val ZERO: Decimal = Decimal(false, "0", 0, FINITE)
-        public val ONE: Decimal = Decimal(false, "1", 0, FINITE)
-        public val TEN: Decimal = Decimal(false, "10", 0, FINITE)
+        /** 10^0 .. 10^18. */
+        private val POW10 = LongArray(19).also { p ->
+            p[0] = 1L
+            for (i in 1..18) p[i] = p[i - 1] * 10L
+        }
+
+        /** The largest magnitude the compact form holds: 18 nines. */
+        private val MAX_COMPACT = POW10[18] - 1L
+
+        public val ZERO: Decimal = Decimal(false, 0L, null, 0, FINITE)
+        public val ONE: Decimal = Decimal(false, 1L, null, 0, FINITE)
+        public val TEN: Decimal = Decimal(false, 10L, null, 0, FINITE)
 
         /** Not-a-number: what PostgreSQL's `numeric` reports as `NaN`. `NaN == NaN` is true here. */
-        public val NaN: Decimal = Decimal(false, "0", 0, SP_NAN)
-        public val POSITIVE_INFINITY: Decimal = Decimal(false, "0", 0, SP_POS_INF)
-        public val NEGATIVE_INFINITY: Decimal = Decimal(true, "0", 0, SP_NEG_INF)
+        public val NaN: Decimal = Decimal(false, 0L, null, 0, SP_NAN)
+        public val POSITIVE_INFINITY: Decimal = Decimal(false, 0L, null, 0, SP_POS_INF)
+        public val NEGATIVE_INFINITY: Decimal = Decimal(true, 0L, null, 0, SP_NEG_INF)
 
         /** Shorthand for [parse]: `Decimal("12.50")`. */
         public operator fun invoke(value: String): Decimal = parse(value)
@@ -564,9 +723,55 @@ public class Decimal private constructor(
                 "Infinity", "+Infinity" -> return POSITIVE_INFINITY
                 "-Infinity" -> return NEGATIVE_INFINITY
             }
-            var i = 0
+            // Fast scan: accumulate up to 18 significant digits straight into a Long.
+            // Anything longer restarts on the string path below; anything malformed
+            // throws from either path with identical rules.
             val n = text.length
             if (n == 0) throw NumberFormatException("Empty decimal string")
+            var i = 0
+            var negative = false
+            when (text[0]) {
+                '-' -> { negative = true; i = 1 }
+                '+' -> i = 1
+            }
+            var mag = 0L
+            var significant = 0
+            var fracLen = 0L
+            var seenDot = false
+            var seenDigit = false
+            while (i < n) {
+                val c = text[i]
+                when {
+                    c in '0'..'9' -> {
+                        seenDigit = true
+                        if (mag == 0L && c == '0') {
+                            // Leading zero: contributes to the fraction length only.
+                        } else {
+                            if (significant == 18) return parseSlow(text)
+                            mag = mag * 10L + (c - '0')
+                            significant++
+                        }
+                        if (seenDot) fracLen++
+                    }
+                    c == '.' && !seenDot -> seenDot = true
+                    c == 'e' || c == 'E' -> break
+                    else -> throw NumberFormatException("Malformed decimal: \"$text\"")
+                }
+                i++
+            }
+            if (!seenDigit) throw NumberFormatException("Malformed decimal: \"$text\"")
+            val exponent = parseExponent(text, i, n)
+            val scale = fracLen - exponent
+            if (scale !in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()) {
+                throw NumberFormatException("Exponent overflow: \"$text\"")
+            }
+            return finiteCompact(negative, mag, scale.toInt())
+        }
+
+        /** The >18-digit tail of [parse]: exact string significand. Same grammar, same errors. */
+        private fun parseSlow(text: String): Decimal {
+            var i = 0
+            val n = text.length
             var negative = false
             when (text[0]) {
                 '-' -> { negative = true; i = 1 }
@@ -591,30 +796,7 @@ public class Decimal private constructor(
                 i++
             }
             if (!seenDigit) throw NumberFormatException("Malformed decimal: \"$text\"")
-            var exponent = 0L
-            if (i < n) { // at 'e' / 'E'
-                i++
-                var expNegative = false
-                if (i < n && (text[i] == '-' || text[i] == '+')) {
-                    expNegative = text[i] == '-'
-                    i++
-                }
-                if (i >= n) throw NumberFormatException("Malformed decimal: \"$text\"")
-                while (i < n) {
-                    val c = text[i]
-                    if (c !in '0'..'9') throw NumberFormatException("Malformed decimal: \"$text\"")
-                    exponent = exponent * 10 + (c - '0')
-                    // The scale check below rejects anything out of Int range; just keep
-                    // the accumulator itself from overflowing on absurdly long exponents.
-                    if (exponent > OVERSIZED_EXPONENT) throw NumberFormatException("Exponent overflow: \"$text\"")
-                    i++
-                }
-                if (expNegative) exponent = -exponent
-                // Like java: the exponent itself must fit in an Int, independent of the scale.
-                if (exponent !in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()) {
-                    throw NumberFormatException("Exponent overflow: \"$text\"")
-                }
-            }
+            val exponent = parseExponent(text, i, n)
             val scale = fracLen - exponent
             if (scale !in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()) {
                 throw NumberFormatException("Exponent overflow: \"$text\"")
@@ -622,9 +804,42 @@ public class Decimal private constructor(
             return finite(negative, DigitMath.stripLeadingZeros(significand.toString()), scale.toInt())
         }
 
+        /** Parses the optional exponent block starting at [i] (at 'e'/'E' or the end). */
+        private fun parseExponent(text: String, start: Int, n: Int): Long {
+            var i = start
+            if (i >= n) return 0L
+            i++ // consume 'e' / 'E'
+            var expNegative = false
+            if (i < n && (text[i] == '-' || text[i] == '+')) {
+                expNegative = text[i] == '-'
+                i++
+            }
+            if (i >= n) throw NumberFormatException("Malformed decimal: \"$text\"")
+            var exponent = 0L
+            while (i < n) {
+                val c = text[i]
+                if (c !in '0'..'9') throw NumberFormatException("Malformed decimal: \"$text\"")
+                exponent = exponent * 10L + (c - '0')
+                // The Int check below rejects anything oversized; just keep the accumulator
+                // itself from overflowing on absurdly long exponents.
+                if (exponent > OVERSIZED_EXPONENT) throw NumberFormatException("Exponent overflow: \"$text\"")
+                i++
+            }
+            if (expNegative) exponent = -exponent
+            // Like java: the exponent itself must fit in an Int, independent of the scale.
+            if (exponent !in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()) {
+                throw NumberFormatException("Exponent overflow: \"$text\"")
+            }
+            return exponent
+        }
+
         /** The [Decimal] `unscaled × 10^-scale`: `of(1250, 2)` is `12.50`. */
         public fun of(unscaled: Long, scale: Int): Decimal {
-            if (unscaled == 0L) return if (scale == 0) ZERO else Decimal(false, "0", scale, FINITE)
+            if (unscaled == 0L) return if (scale == 0) ZERO else Decimal(false, 0L, null, scale, FINITE)
+            if (unscaled != Long.MIN_VALUE) {
+                val mag = if (unscaled < 0L) -unscaled else unscaled
+                if (mag <= MAX_COMPACT) return Decimal(unscaled < 0L, mag, null, scale, FINITE)
+            }
             return finite(unscaled < 0, unsignedDigits(unscaled), scale)
         }
 
@@ -661,11 +876,54 @@ public class Decimal private constructor(
             return sb.reverse().toString()
         }
 
-        /** Normalizing constructor for finite values. */
+        /** Number of decimal digits in [v] (1 for 0); [v] must be in `0..MAX_COMPACT`. */
+        private fun digitCount(v: Long): Int {
+            var count = 1
+            while (count < 19 && v >= POW10[count]) count++
+            return count
+        }
+
+        /** `magnitude × 10^pad` when it stays ≤ [MAX_COMPACT]; -1 when it would not. */
+        private fun alignedOrNegative(magnitude: Long, pad: Long): Long {
+            if (pad == 0L) return magnitude
+            if (pad > 17L || magnitude > MAX_COMPACT / POW10[pad.toInt()]) return -1L
+            return magnitude * POW10[pad.toInt()]
+        }
+
+        /** The shared rounding-increment decision; [firstDropped] is the MSD of the dropped block. */
+        private fun shouldIncrement(
+            mode: RoundingMode,
+            negative: Boolean,
+            firstDropped: Char,
+            restNonZero: Boolean,
+            oddLastDigit: Boolean,
+        ): Boolean = when (mode) {
+            RoundingMode.UP -> true
+            RoundingMode.DOWN -> false
+            RoundingMode.CEILING -> !negative
+            RoundingMode.FLOOR -> negative
+            RoundingMode.HALF_UP -> firstDropped >= '5'
+            RoundingMode.HALF_DOWN -> firstDropped > '5' || (firstDropped == '5' && restNonZero)
+            RoundingMode.HALF_EVEN -> firstDropped > '5' || (firstDropped == '5' && (restNonZero || oddLastDigit))
+            RoundingMode.UNNECESSARY -> throw ArithmeticException("Rounding necessary")
+        }
+
+        /** Normalizing constructor from a digit string (compacts when ≤18 digits). */
         private fun finite(negative: Boolean, digits: String, scale: Int): Decimal {
             val d = DigitMath.stripLeadingZeros(digits)
-            if (d == "0") return if (scale == 0) ZERO else Decimal(false, "0", scale, FINITE)
-            return Decimal(negative, d, scale, FINITE)
+            if (d.length <= 18) {
+                var mag = 0L
+                for (c in d) mag = mag * 10L + (c - '0')
+                return finiteCompact(negative, mag, scale)
+            }
+            return Decimal(negative, -1L, d, scale, FINITE)
+        }
+
+        /** Normalizing constructor from a compact magnitude (falls back past 18 digits). */
+        private fun finiteCompact(negative: Boolean, magnitude: Long, scale: Int): Decimal {
+            if (magnitude == 0L) return if (scale == 0) ZERO else Decimal(false, 0L, null, scale, FINITE)
+            if (magnitude <= MAX_COMPACT) return Decimal(negative, magnitude, null, scale, FINITE)
+            return Decimal(negative, -1L, magnitude.toString(), scale, FINITE)
         }
 
         private fun checkScale(scale: Long) {

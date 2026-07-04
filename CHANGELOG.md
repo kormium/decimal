@@ -6,6 +6,15 @@ All notable changes are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+- **Compact representation**: significands of up to 18 digits are stored in a `Long`
+  (java's `intCompact` approach) with fast paths for parse, `plus`/`minus`, `times`,
+  `div`/`divideToIntegral`, `compareTo`, `setScale`, `hashCode`, `toLong` and
+  `stripTrailingZeros`; longer significands keep the exact digit-string arithmetic.
+  API-invisible; verified by the same differential oracle (400k cases × multiple seeds).
+  Money-profile effect: JVM parse 2.1×, addition 13.5× (parity with `java.math`);
+  native parse 1.7×, addition 3×, toString 1.2× (2-50× ahead of ionspin across the board).
+
 ### Added
 - Division: `div(other, scale, roundingMode)` (both always explicit — deliberately no `/`
   operator), `divideToIntegral` (java preferred-scale semantics) and the exact `%` operator
